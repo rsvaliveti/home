@@ -1,0 +1,35 @@
+name: Jekyll site CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build the site in the jekyll/builder container
+      run: |
+        docker run -v ${{ github.workspace }}:/srv/jekyll -v ${{ github.workspace }}/_site:/srv/jekyll/_site \
+        jekyll/builder:latest /bin/bash -c "chmod 777 /srv/jekyll && jekyll build --future"
+    - name: Deploy
+      if: github.ref == 'refs/heads/master'
+      env:
+        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+      run: |
+        set -xo pipefail
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        if git show-ref --verify --quiet "refs/heads/gh-pages"; then git branch -D gh-pages; fi
+        git checkout -b gh-pages
+        ls -Q | grep -v _site | xargs rm -rf
+        cp -r _site/* .
+        [[ -n "$(git status --porcelain)" ]] || exit 0
+        git add .
+        git commit -m "Build $(git rev-parse master | grep -o '^.\{10\}')"
+        git push -f -q "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
